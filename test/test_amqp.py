@@ -1,16 +1,18 @@
 from __future__ import print_function
 from __future__ import absolute_import
-from builtins import bytes
+from builtins import bytes  # pylint: disable=redefined-builtin
+from copy import copy
 import os
-from tornado import gen, testing, concurrent
 import uuid
 import logging
-import pika.exceptions
 from sys import version_info
-import shortuuid
 import time
 import unittest
 from unittest import skipIf
+
+import shortuuid
+from tornado import gen, testing, concurrent
+import pika.exceptions
 from six.moves import range
 
 try:
@@ -22,15 +24,16 @@ from topika.exceptions import ChannelClosed
 
 import topika
 import topika.exceptions
-from copy import copy
 from topika import connect, Message, DeliveryMode
 from topika.exceptions import MessageProcessError, ProbableAuthenticationError
 from topika.exchange import ExchangeType
 from topika.tools import wait
 from . import BaseTestCase, AMQP_URL
 
-log = logging.getLogger(__name__)
-skip_for_py34 = skipIf(version_info < (3, 5), "async/await syntax supported only for python 3.5+")
+LOG = logging.getLogger(__name__)
+SKIP_FOR_PY34 = skipIf(version_info < (3, 5), "async/await syntax supported only for python 3.5+")
+
+# pylint: disable=too-many-lines, too-many-public-methods
 
 
 class TestCase(BaseTestCase):
@@ -42,11 +45,11 @@ class TestCase(BaseTestCase):
         self.get_random_name("test_connection")
         self.get_random_name()
 
-        self.__closed = False
+        self.__closed = False  # pylint: disable=attribute-defined-outside-init
 
-        def on_close(ch):
-            log.info("Close called")
-            self.__closed = True
+        def on_close(_):
+            LOG.info("Close called")
+            self.__closed = True  # pylint: disable=attribute-defined-outside-init
 
         channel = yield client.channel()
         channel.add_close_callback(on_close)
@@ -106,8 +109,8 @@ class TestCase(BaseTestCase):
         body = bytes(shortuuid.uuid(), 'utf-8')
 
         with self.assertRaises(ValueError):
-            f = exchange.publish(Message(body, content_type='text/plain', headers={'foo': 'bar'}), routing_key)
-            yield f
+            fut = exchange.publish(Message(body, content_type='text/plain', headers={'foo': 'bar'}), routing_key)
+            yield fut
 
         yield queue.unbind(exchange, routing_key)
 
@@ -176,7 +179,7 @@ class TestCase(BaseTestCase):
         yield queue.unbind(exchange, routing_key)
 
     @testing.gen_test
-    def test_simple_publish_and_receive_delivery_mode_explicitly_none(self):
+    def test_simple_publish_and_receive_delivery_mode_explicitly_none(self):  # pylint: disable=invalid-name
         queue_name = self.get_random_name("test_connection")
         routing_key = self.get_random_name()
 
@@ -188,8 +191,8 @@ class TestCase(BaseTestCase):
 
         body = bytes(shortuuid.uuid(), 'utf-8')
 
-        yield exchange.publish(
-            Message(body, content_type='text/plain', headers={'foo': 'bar'}, delivery_mode=None), routing_key)
+        yield exchange.publish(Message(body, content_type='text/plain', headers={'foo': 'bar'}, delivery_mode=None),
+                               routing_key)
 
         incoming_message = yield queue.get(timeout=5)
         incoming_message.ack()
@@ -199,7 +202,7 @@ class TestCase(BaseTestCase):
         yield queue.unbind(exchange, routing_key)
 
     @testing.gen_test
-    def test_simple_publish_and_receive_to_bound_exchange(self):
+    def test_simple_publish_and_receive_to_bound_exchange(self):  # pylint: disable=invalid-name
         routing_key = self.get_random_name()
         src_name = self.get_random_name("source", "exchange")
         dest_name = self.get_random_name("destination", "exchange")
@@ -238,7 +241,7 @@ class TestCase(BaseTestCase):
 
         body = bytes(shortuuid.uuid(), 'utf-8')
 
-        self.maxDiff = None
+        self.maxDiff = None  # pylint: disable=invalid-name
 
         info = {
             'headers': {
@@ -259,21 +262,20 @@ class TestCase(BaseTestCase):
             'body_size': len(body)
         }
 
-        msg = Message(
-            body=body,
-            headers={'foo': 'bar'},
-            content_type='application/json',
-            content_encoding='text',
-            delivery_mode=DeliveryMode.PERSISTENT,
-            priority=0,
-            correlation_id=1,
-            reply_to='test',
-            expiration=1.5,
-            message_id=info['message_id'],
-            timestamp=info['timestamp'],
-            type='0',
-            user_id='guest',
-            app_id='test')
+        msg = Message(body=body,
+                      headers={'foo': 'bar'},
+                      content_type='application/json',
+                      content_encoding='text',
+                      delivery_mode=DeliveryMode.PERSISTENT,
+                      priority=0,
+                      correlation_id=1,
+                      reply_to='test',
+                      expiration=1.5,
+                      message_id=info['message_id'],
+                      timestamp=info['timestamp'],
+                      type='0',
+                      user_id='guest',
+                      app_id='test')
 
         yield exchange.publish(msg, routing_key)
 
@@ -574,20 +576,20 @@ class TestCase(BaseTestCase):
 
         body = bytes(shortuuid.uuid(), 'utf-8')
 
-        f = concurrent.Future()
+        fut = concurrent.Future()
 
         def handle(message):
             message.ack()
             self.assertEqual(message.body, body)
             self.assertEqual(message.routing_key, routing_key)
-            f.set_result(True)
+            fut.set_result(True)
 
         yield queue.consume(handle)
 
         yield exchange.publish(Message(body, content_type='text/plain', headers={'foo': 'bar'}), routing_key)
 
-        if not f.done():
-            yield f
+        if not fut.done():
+            yield fut
 
         yield queue.unbind(exchange, routing_key)
         yield exchange.delete()
@@ -654,7 +656,7 @@ class TestCase(BaseTestCase):
 
             with self.assertRaises(gen.TimeoutError):
                 yield queue.get(timeout=1)
-        except:
+        except topika.exceptions.QueueEmpty:
             yield queue.unbind(exchange, routing_key)
             yield queue.delete()
 
@@ -669,7 +671,13 @@ class TestCase(BaseTestCase):
         amqp_url.username = uuid.uuid4().hex
         amqp_url.password = uuid.uuid4().hex
 
-        with self.assertRaises(pika.exceptions.ConnectionClosedByBroker):
+        if pika.__version__ in ('1.0.0', '1.0.1'):
+            exception = pika.exceptions.ConnectionClosedByBroker
+        else:
+            # The exception has now changed to this
+            exception = ProbableAuthenticationError
+
+        with self.assertRaises(exception):
             yield connect(amqp_url)
 
     @testing.gen_test
@@ -691,27 +699,26 @@ class TestCase(BaseTestCase):
 
         channel = yield self.create_channel()
 
-        f = concurrent.Future()
+        fut = concurrent.Future()
 
         @gen.coroutine
         def dlx_handle(message):
             message.ack()
             self.assertEqual(message.body, body)
             self.assertEqual(message.routing_key, dlx_routing_key)
-            f.set_result(True)
+            fut.set_result(True)
 
         direct_exchange = yield self.declare_exchange('direct', channel=channel, auto_delete=True)  # type:
         # topika.Exchange
         dlx_exchange = yield channel.declare_exchange('dlx', ExchangeType.DIRECT, auto_delete=True)
 
-        direct_queue = yield channel.declare_queue(
-            "%s_direct_queue" % suffix,
-            auto_delete=True,
-            arguments={
-                'x-message-ttl': 300,
-                'x-dead-letter-exchange': 'dlx',
-                'x-dead-letter-routing-key': dlx_routing_key
-            })
+        direct_queue = yield channel.declare_queue("%s_direct_queue" % suffix,
+                                                   auto_delete=True,
+                                                   arguments={
+                                                       'x-message-ttl': 300,
+                                                       'x-dead-letter-exchange': 'dlx',
+                                                       'x-dead-letter-routing-key': dlx_routing_key
+                                                   })
 
         dlx_queue = yield channel.declare_queue("%s_dlx_queue" % suffix, auto_delete=True)
 
@@ -723,14 +730,15 @@ class TestCase(BaseTestCase):
 
         try:
             yield direct_exchange.publish(
-                Message(
-                    body, content_type='text/plain', headers={
-                        'x-message-ttl': 100,
-                        'x-dead-letter-exchange': 'dlx',
-                    }), routing_key)
+                Message(body,
+                        content_type='text/plain',
+                        headers={
+                            'x-message-ttl': 100,
+                            'x-dead-letter-exchange': 'dlx',
+                        }), routing_key)
 
-            if not f.done():
-                yield f
+            if not fut.done():
+                yield fut
         finally:
             yield dlx_queue.unbind(dlx_exchange, routing_key)
             yield direct_queue.unbind(direct_exchange, routing_key)
@@ -767,21 +775,21 @@ class TestCase(BaseTestCase):
 
         channel = yield client.channel()  # type: topika.Channel
 
-        f = concurrent.Future()
+        fut = concurrent.Future()
 
-        channel.add_on_return_callback(f.set_result)
+        channel.add_on_return_callback(fut.set_result)
 
         body = bytes(shortuuid.uuid(), 'utf-8')
 
-        yield channel.default_exchange.publish(
-            Message(body, content_type='text/plain', headers={'foo': 'bar'}), self.get_random_name("test_basic_return"))
+        yield channel.default_exchange.publish(Message(body, content_type='text/plain', headers={'foo': 'bar'}),
+                                               self.get_random_name("test_basic_return"))
 
-        returned = yield f
+        returned = yield fut
 
         self.assertEqual(returned.body, body)
 
         # handler with exception
-        f = concurrent.Future()
+        fut = concurrent.Future()
 
         yield channel.close()
 
@@ -791,16 +799,16 @@ class TestCase(BaseTestCase):
             try:
                 raise ValueError
             finally:
-                f.set_result(message)
+                fut.set_result(message)
 
         channel.add_on_return_callback(bad_handler)
 
         body = bytes(shortuuid.uuid(), 'utf-8')
 
-        yield channel.default_exchange.publish(
-            Message(body, content_type='text/plain', headers={'foo': 'bar'}), self.get_random_name("test_basic_return"))
+        yield channel.default_exchange.publish(Message(body, content_type='text/plain', headers={'foo': 'bar'}),
+                                               self.get_random_name("test_basic_return"))
 
-        returned = yield f
+        returned = yield fut
 
         self.assertEqual(returned.body, body)
 
@@ -818,24 +826,23 @@ class TestCase(BaseTestCase):
 
         yield dlx_queue.bind(dlx_exchange, routing_key=dlx_queue.name)
 
-        queue = yield channel.declare_queue(
-            self.get_random_name("test_expiration"),
-            arguments={
-                "x-message-ttl": 10000,
-                "x-dead-letter-exchange": dlx_exchange.name,
-                "x-dead-letter-routing-key": dlx_queue.name,
-            })  # type: topika.Queue
+        queue = yield channel.declare_queue(self.get_random_name("test_expiration"),
+                                            arguments={
+                                                "x-message-ttl": 10000,
+                                                "x-dead-letter-exchange": dlx_exchange.name,
+                                                "x-dead-letter-routing-key": dlx_queue.name,
+                                            })  # type: topika.Queue
 
         body = bytes(shortuuid.uuid(), 'utf-8')
 
         yield channel.default_exchange.publish(
             Message(body, content_type='text/plain', headers={'foo': 'bar'}, expiration=0.5), queue.name)
 
-        f = concurrent.Future()
+        fut = concurrent.Future()
 
-        yield dlx_queue.consume(f.set_result, no_ack=True)
+        yield dlx_queue.consume(fut.set_result, no_ack=True)
 
-        message = yield f
+        message = yield fut
 
         self.assertEqual(message.body, body)
         self.assertEqual(message.headers['x-death'][0]['original-expiration'], '500')
@@ -848,8 +855,8 @@ class TestCase(BaseTestCase):
 
         shared_list = []
 
-        def share(f):
-            shared_list.append(f)
+        def share(result):
+            shared_list.append(result)
 
         client.add_close_callback(share)
         yield client.close()
@@ -1030,7 +1037,7 @@ class TestCase(BaseTestCase):
         yield client.close()
 
     @testing.gen_test
-    def test_transaction_when_publisher_confirms_error(self):
+    def test_transaction_when_publisher_confirms_error(self):  # pylint: disable=invalid-name
         channel = yield self.create_channel(publisher_confirms=True)
         with self.assertRaises(RuntimeError):
             channel.transaction()
@@ -1038,16 +1045,16 @@ class TestCase(BaseTestCase):
     @testing.gen_test
     def test_transaction_simple_commit(self):
         channel = yield self.create_channel(publisher_confirms=False)
-        tx = channel.transaction()
-        yield tx.select()
-        yield tx.commit()
+        transaction = channel.transaction()
+        yield transaction.select()
+        yield transaction.commit()
 
     @testing.gen_test
     def test_transaction_simple_rollback(self):
         channel = yield self.create_channel(publisher_confirms=False)
-        tx = channel.transaction()
-        yield tx.select()
-        yield tx.rollback()
+        transaction = channel.transaction()
+        yield transaction.select()
+        yield transaction.rollback()
 
     # @skip_for_py34
     # @testing.gen_test
@@ -1112,20 +1119,19 @@ class MessageTestCase(unittest.TestCase):
             'body_size': len(body)
         }
 
-        msg = Message(
-            body=body,
-            headers={'foo': 'bar'},
-            content_type='application/json',
-            content_encoding='text',
-            delivery_mode=DeliveryMode.PERSISTENT,
-            priority=0,
-            correlation_id=1,
-            reply_to='test',
-            expiration=1.5,
-            message_id=info['message_id'],
-            timestamp=info['timestamp'],
-            type='0',
-            user_id='guest',
-            app_id='test')
+        msg = Message(body=body,
+                      headers={'foo': 'bar'},
+                      content_type='application/json',
+                      content_encoding='text',
+                      delivery_mode=DeliveryMode.PERSISTENT,
+                      priority=0,
+                      correlation_id=1,
+                      reply_to='test',
+                      expiration=1.5,
+                      message_id=info['message_id'],
+                      timestamp=info['timestamp'],
+                      type='0',
+                      user_id='guest',
+                      app_id='test')
 
         self.assertDictEqual(info, msg.info())
