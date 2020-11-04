@@ -1,13 +1,11 @@
 from __future__ import absolute_import
-import collections
 import logging
 import pika
 import pika.exceptions
 from tornado import gen, locks
-from typing import Callable, Any, Generator, Union
+from typing import Callable, Any, Union
 
 from .common import BaseChannel
-from . import compat
 from .compat import Awaitable
 from . import common
 from . import exceptions
