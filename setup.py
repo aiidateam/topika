@@ -33,7 +33,6 @@ setup(
         'Programming Language :: Python',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: Implementation :: PyPy',
@@ -46,7 +45,7 @@ setup(
     # for a useful dicussion
     install_requires=['tornado>=4.0, <6.0', 'pika>=1.0.0', 'shortuuid', 'six', 'furl'],
     extras_require={
-        'dev': ['pytest>=4', 'pytest-cov', 'ipython', 'twine', 'pre-commit', 'yapf', 'prospector', 'future'],
+        'dev': ['pytest>=4', 'pytest-cov', 'ipython', 'twine', 'future'],
         ':python_version<"3.5"': ['typing'],
         ':python_version<"3.4"': ['enum34', 'singledispatch'],
         ':python_version<"3.3"': ['mock'],

@@ -876,7 +876,7 @@ class TestCase(BaseTestCase):
 
         yield queue.bind(exchange, routing_key)
 
-        body = bytes(shortuuid.uuid(), 'utf-8') * 9999999
+        body = bytes(shortuuid.uuid(), 'utf-8') * 5000000
 
         yield exchange.publish(Message(body, content_type='text/plain', headers={'foo': 'bar'}), routing_key)
 
