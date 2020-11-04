@@ -408,21 +408,20 @@ def connect(url=None,
         def main():
             connection = yield topika.connect()
 
-    .. note::
-
-        The available keys for ssl_options parameter are:
-            * cert_reqs
-            * certfile
-            * keyfile
-            * ssl_version
-
-        For an information on what the ssl_options can be set to reference the
-        `official Python documentation`_.
-
-        .. _official Python documentation: http://docs.python.org/3/library/ssl.html
-
-    URL string might be contain ssl parameters e.g.
+    URL string might contain ssl parameters e.g.
     `amqps://user:password@10.0.0.1//?ca_certs=ca.pem&certfile=cert.pem&keyfile=key.pem`
+
+    Valid URL SSL parameters are:
+
+        * ca_certs
+        * cafile
+        * capath
+        * cadata
+        * keyfile
+        * certfile
+        * no_verify_ssl
+
+    Note that ``ca_certs`` and ``cafile`` are synonyms.
 
     :param url: `RFC3986`_ formatted broker address. When :class:`None` \
                 will be used keyword arguments.
@@ -438,8 +437,8 @@ def connect(url=None,
     :type password: str
     :param virtualhost: virtualhost parameter. `'/'` by default
     :type virtualhost: str
-    :param ssl_options: A dict of values for the SSL connection.
-    :type ssl_options: dict
+    :param ssl_options: SSL connection parameters.
+    :type ssl_options: :class:`pika.SSLOptions`
     :param loop: Event loop (:func:`tornado.ioloop.IOLoop.current()` when :class:`None`)
     :type loop: :class:`tornado.ioloop.IOLoop`
     :param connection_class: Factory of a new connection
@@ -451,6 +450,9 @@ def connect(url=None,
     .. _pika documentation: https://goo.gl/TdVuZ9
 
     """
+    import ssl
+    from six.moves.urllib.parse import parse_qs
+
     if url:
         url = urlparse(str(url))
         host = url.hostname or host
@@ -459,19 +461,34 @@ def connect(url=None,
         password = url.password or password
         virtualhost = url.path[1:] if len(url.path) > 1 else virtualhost
 
-        ssl_keys = (
-            'ca_certs',
-            'cert_reqs',
-            'certfile',
-            'keyfile',
-            'ssl_version',
-        )
+        parsed_qs = parse_qs(url.query)
 
-        for key in ssl_keys:
-            if key not in url.query:
-                continue
+        opt_ca_certs = parsed_qs['ca_certs'][0] if 'ca_certs' in parsed_qs else None
+        opt_capath = parsed_qs['capath'][0] if 'capath' in parsed_qs else None
+        opt_cafile = parsed_qs['cafile'][0] if 'cafile' in parsed_qs else None
+        opt_cadata = parsed_qs['cadata'][0] if 'cadata' in parsed_qs else None
+        opt_keyfile = parsed_qs['keyfile'][0] if 'keyfile' in parsed_qs else None
+        opt_certfile = parsed_qs['certfile'][0] if 'certfile' in parsed_qs else None
+        opt_no_verify = bool(parsed_qs['no_verify_ssl'][0]) if 'no_verify_ssl' in parsed_qs else False
 
-            ssl_options[key] = url.query[key]
+        # Only define `ssl_options` if any of the relevant options have been specified in the URL.
+        options = [opt_ca_certs, opt_capath, opt_cafile, opt_cadata, opt_keyfile, opt_certfile]
+        if any(option is not None for option in options):
+            context = ssl.create_default_context(
+                ssl.Purpose.SERVER_AUTH,
+                cafile=opt_cafile or opt_ca_certs,
+                capath=opt_capath,
+                cadata=opt_cadata
+            )
+
+            if opt_certfile is not None:
+                context.load_cert_chain(opt_certfile, opt_keyfile)
+
+            if opt_no_verify:
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+
+            ssl_options = pika.SSLOptions(context)
 
     connection = connection_class(
         host=host,
